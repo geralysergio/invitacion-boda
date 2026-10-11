@@ -4,7 +4,7 @@
 	 viewBox="0 0 2000 2000" style="enable-background:new 0 0 2000 2000;" xml:space="preserve">
 <style type="text/css">
 	.st0{fill:#FBFBFB;}
-	.st1{fill:none;stroke:#FFFFFF;stroke-miterlimit:10;}
+	.st1{opacity:0;fill:none;stroke:#FFFFFF;stroke-miterlimit:10;}
 </style>
 <g id="monograma">
 	<path class="st0" d="M1505.62,953.77c-11.49-19.5-29.51-33.21-50.21-42.3c-79.29-34.8-179.42-23.44-259.84,6.04

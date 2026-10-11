@@ -271,9 +271,13 @@ abrirSobre.addEventListener(
                     - formación del monograma
                 */
 
+                prepararHilosMonograma();
+
                 salmo.classList.add(
                     "visible"
                 );
+
+                animarHilosMonograma();
 
 
             },
@@ -782,3 +786,58 @@ formRsvp.addEventListener(
 
     }
 );
+
+/* =====================================================
+   TRES LÍNEAS DESDE ARRIBA QUE CONTINÚAN EN EL MONOGRAMA
+===================================================== */
+const dibujoMonograma = document.querySelector(".monograma-dibujo");
+const hilosMonograma = [...document.querySelectorAll(".hilo-monograma")];
+const mascarasMonograma = [...document.querySelectorAll(".mascara-trazo")];
+const monogramaFinal = document.querySelector(".monograma-formado");
+const recorridosOriginales = hilosMonograma.map(hilo => hilo.getAttribute("d"));
+
+function prepararHilosMonograma() {
+    const caja = dibujoMonograma.getBoundingClientRect();
+    const inicioSeccion = document.getElementById("heroVideo").getBoundingClientRect().top;
+    const arriba = (inicioSeccion - caja.top) * 2000 / caja.width - 100;
+    hilosMonograma.forEach((hilo, indice) => {
+        hilo.setAttribute("d", recorridosOriginales[indice]);
+        const inicio = hilo.getPointAtLength(0);
+        // El mismo recorrido baja desde el borde superior y sigue el trazo.
+        const recorrido = `M${inicio.x},${arriba} L${inicio.x},${inicio.y} ` +
+            recorridosOriginales[indice].replace(/^M\s*[-\d.]+[,\s]+[-\d.]+/, "");
+        hilo.setAttribute("d", recorrido);
+        mascarasMonograma[indice].setAttribute("d", recorrido);
+        [hilo, mascarasMonograma[indice]].forEach(path => {
+            const longitud = path.getTotalLength();
+            path.style.strokeDasharray = longitud;
+            path.style.strokeDashoffset = longitud;
+            path.dataset.longitud = longitud;
+        });
+    });
+}
+
+function animarHilosMonograma() {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        monogramaFinal.style.opacity = "1";
+        return;
+    }
+    hilosMonograma.forEach((hilo, indice) => {
+        const opciones = { duration: 5200, delay: 5200 + indice * 180,
+            easing: "linear", fill: "forwards" };
+        [hilo, mascarasMonograma[indice]].forEach(path => {
+            path.style.visibility = "visible";
+            path.animate([
+                { strokeDashoffset: path.dataset.longitud },
+                { strokeDashoffset: "0" }
+            ], opciones);
+        });
+        // Los hilos se desvanecen cuando queda formado el símbolo exacto.
+        hilo.animate([{ opacity: 1 }, { opacity: 0 }], {
+            duration: 900, delay: 10800, fill: "forwards"
+        });
+    });
+    monogramaFinal.animate([{ opacity: 0 }, { opacity: 1 }], {
+        duration: 600, delay: 10800, fill: "forwards"
+    });
+}
