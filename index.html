@@ -3086,7 +3086,7 @@ body .contador-item span {
             </p>
 
             <h1 id="nombreSobre">
-                Julieth Escudero
+                Cargando invitación…
             </h1>
 
             <p class="lugares">
@@ -3094,7 +3094,7 @@ body .contador-item span {
                 Hemos reservado
 
                 <strong id="cuposSobre">
-                    3 lugares
+                    … lugares
                 </strong>
 
                 para ti
@@ -4061,7 +4061,7 @@ body .contador-item span {
 
 
         <h2 id="nombreFormulario">
-            Julieth Escudero
+            Cargando invitación…
         </h2>
 
 
@@ -4081,6 +4081,7 @@ body .contador-item span {
 
 
         <form id="formRsvp">
+<p id="estadoRsvp" role="status" aria-live="polite" style="line-height:1.5;margin-bottom:18px"></p>
 
 
             <!-- ASISTENCIA -->
@@ -4240,8 +4241,7 @@ body .contador-item span {
 
             <p class="demo-formulario">
 
-                DEMOSTRACIÓN · LOS DATOS
-                AÚN NO SE ENVÍAN
+                Tu respuesta quedará registrada.
 
             </p>
 
@@ -4260,20 +4260,27 @@ body .contador-item span {
    DATOS DEL INVITADO
 ===================================================== */
 
-const invitado = {
+// Pega aquí la URL /exec de tu aplicación de Google Apps Script.
+const API_RSVP = "https://script.google.com/macros/s/AKfycbzRCZRaTb3_-W_WGjIkBxPN8Q8gkNjMeYX_aecM672jzG2j34b6Jsvc5G6daDuoI-8OSw/exec";
 
-    nombre: "Julieth Escudero",
+(async function iniciarInvitacion() {
+const tokenInvitado = new URLSearchParams(location.search).get("invitado");
+let invitado;
+try {
+    if (!tokenInvitado) throw new Error("Abre tu enlace personal de invitación.");
+    if (!API_RSVP.startsWith("https://script.google.com/macros/s/"))
+        throw new Error("La invitación aún está en preparación. Intenta nuevamente más tarde.");
+    const resultado = await consultarRsvp({accion: "invitado", token: tokenInvitado});
+    if (!resultado.ok) throw new Error(resultado.error);
+    invitado = resultado.invitado;
+} catch (error) {
+    document.getElementById("nombreSobre").textContent = "Nuestra boda";
+    document.getElementById("cuposSobre").closest("p").textContent = error.message;
+    document.getElementById("abrirSobre").disabled = true;
+    document.querySelector(".abrir-texto").textContent = "NECESITAS TU ENLACE PERSONAL";
+    return;
+}
 
-    cupos: 3,
-
-    /*
-        false = NO tiene hospedaje
-        true  = SÍ tiene hospedaje
-    */
-
-    hospedaje: false
-
-};
 
 
 
@@ -5033,21 +5040,62 @@ cerrarFondo.addEventListener(
    FORMULARIO DEMOSTRACIÓN
 ===================================================== */
 
-formRsvp.addEventListener(
-    "submit",
-    function (evento) {
-
-
-        evento.preventDefault();
-
-
-        alert(
-            "Esta es una demostración. Más adelante conectaremos este formulario con la lista real de invitados."
-        );
-
-
+const estadoRsvp = document.getElementById("estadoRsvp");
+const botonConfirmar = formRsvp.querySelector('[type="submit"]');
+const radiosHospedaje = [...formRsvp.querySelectorAll('[name="hospedaje"]')];
+formRsvp.querySelector('[name="asistencia"]').required = true;
+function ajustarAsistencia() {
+    const asiste = formRsvp.querySelector('[name="asistencia"]:checked')?.value === "si";
+    cantidadAsistentes.disabled = !asiste;
+    radiosHospedaje.forEach(radio => {
+        radio.disabled = !asiste || !invitado.hospedaje;
+        radio.required = asiste && invitado.hospedaje;
+    });
+    bloqueHospedaje.classList.toggle("oculto", !asiste || !invitado.hospedaje);
+}
+formRsvp.addEventListener("change", ajustarAsistencia);
+if (invitado.respuesta) {
+    const anterior = invitado.respuesta;
+    const radio = formRsvp.querySelector(`[name="asistencia"][value="${anterior.asistencia}"]`);
+    if (radio) radio.checked = true;
+    if (anterior.personas > 0) cantidadAsistentes.value = anterior.personas;
+    const hotel = formRsvp.querySelector(`[name="hospedaje"][value="${anterior.hospedaje}"]`);
+    if (hotel) hotel.checked = true;
+    estadoRsvp.textContent = "Ya tenemos tu respuesta. Puedes actualizarla aquí.";
+}
+ajustarAsistencia();
+let enviandoRsvp = false;
+formRsvp.addEventListener("submit", async evento => {
+    evento.preventDefault();
+    if (enviandoRsvp || !formRsvp.reportValidity()) return;
+    const asistencia = formRsvp.querySelector('[name="asistencia"]:checked').value;
+    const personas = asistencia === "si" ? Number(cantidadAsistentes.value) : 0;
+    const hospedaje = asistencia === "si" && invitado.hospedaje
+        ? formRsvp.querySelector('[name="hospedaje"]:checked')?.value : "no";
+    if (asistencia === "si" && (!Number.isInteger(personas) || personas < 1 || personas > invitado.cupos)) {
+        estadoRsvp.textContent = "Selecciona una cantidad dentro de tus cupos."; return;
     }
-);
+    const requestId = crypto.randomUUID();
+    const datos = {token: tokenInvitado, asistencia, personas, hospedaje, requestId};
+    enviandoRsvp = true; botonConfirmar.disabled = true;
+    estadoRsvp.textContent = "Guardando tu respuesta…";
+    try {
+        // POST simple; la confirmación se comprueba mediante una consulta de solo lectura.
+        await fetch(API_RSVP, {method:"POST", mode:"no-cors", credentials:"omit",
+            headers:{"Content-Type":"text/plain;charset=utf-8"}, body:JSON.stringify(datos)});
+        let guardada = false;
+        for (let intento = 0; intento < 12; intento++) {
+            const estado = await consultarRsvp({accion:"estado",token:tokenInvitado,requestId});
+            if (estado.ok && estado.guardada) { guardada = true; break; }
+            if (!estado.ok) throw new Error(estado.error);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        if (!guardada) throw new Error("No pudimos verificar el registro. Tu respuesta puede haberse guardado. Recarga para comprobarla antes de intentarlo otra vez.");
+        estadoRsvp.textContent = "Tu respuesta quedó guardada. ¡Gracias!";
+        botonConfirmar.textContent = "ACTUALIZAR RESPUESTA";
+    } catch (error) { estadoRsvp.textContent = error.message || "No pudimos conectar. Intenta nuevamente."; }
+    finally { enviandoRsvp = false; botonConfirmar.disabled = false; }
+});
 
 /* =====================================================
    TRES LÍNEAS DESDE ARRIBA QUE CONTINÚAN EN EL MONOGRAMA
@@ -5104,6 +5152,21 @@ function animarHilosMonograma() {
     });
 }
 
+})();
+
+function consultarRsvp(parametros) {
+    return new Promise((resolve, reject) => {
+        const callback = "rsvp_" + crypto.randomUUID().replaceAll("-", "");
+        const script = document.createElement("script");
+        const url = new URL(API_RSVP);
+        Object.entries({...parametros, callback}).forEach(([k,v]) => url.searchParams.set(k,v));
+        const limpiar = () => { clearTimeout(timer); script.remove(); delete window[callback]; };
+        const timer = setTimeout(() => { limpiar(); reject(new Error("No pudimos conectar. Intenta nuevamente.")); }, 15000);
+        window[callback] = data => { limpiar(); resolve(data); };
+        script.onerror = () => { limpiar(); reject(new Error("No pudimos conectar. Intenta nuevamente.")); };
+        script.src = url.toString(); document.head.appendChild(script);
+    });
+}
 </script>
 
 
